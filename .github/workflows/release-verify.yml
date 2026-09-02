@@ -1,1 +1,82 @@
+name: Release E2E mobile diagnostics
 
+on:
+  workflow_dispatch:
+
+jobs:
+  mobile-transaction-postgres:
+    name: Mobile transaction flow / PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: debt_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d debt_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/debt_test
+      TELEGRAM_BOT_TOKEN: ci-test-token
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Restore project files
+        run: tar -xzf vhisobot-project.tar.gz
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.26.1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install JavaScript dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Python test dependencies
+        run: python -m pip install -r telegram-debt-bot/requirements-dev.txt
+
+      - name: Apply PostgreSQL schema
+        working-directory: telegram-debt-bot
+        run: python -c "import asyncio; from db import init_db; asyncio.run(init_db())"
+
+      - name: Run mobile transaction flow
+        run: pnpm run test:e2e:release:mobile
+
+      - name: Verify controlled mobile failure diagnostics
+        id: verify-controlled-mobile-failure
+        run: |
+          report="$RUNNER_TEMP/mobile-transaction-failure-report.log"
+          if RELEASE_MOBILE_TEST_FAILURE="controlled mobile transaction failure" pnpm run test:e2e:release:mobile >"$report" 2>&1; then
+            status=0
+          else
+            status=$?
+          fi
+          cat "$report"
+          test "$status" -eq 1
+          grep -F "Server listening" "$report"
+          grep -F "Waiting on http://localhost:" "$report"
+
+      - name: Upload controlled mobile failure diagnostics
+        if: ${{ failure() && steps.verify-controlled-mobile-failure.outcome == 'failure' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobile-transaction-failure-report
+          path: ${{ runner.temp }}/mobile-transaction-failure-report.log
+          if-no-files-found: error
