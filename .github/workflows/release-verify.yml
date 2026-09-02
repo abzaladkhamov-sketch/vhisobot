@@ -21,9 +21,11 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
     env:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/debt_test
       TELEGRAM_BOT_TOKEN: ci-test-token
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -55,6 +57,9 @@ jobs:
       - name: Apply PostgreSQL schema
         working-directory: telegram-debt-bot
         run: python -c "import asyncio; from db import init_db; asyncio.run(init_db())"
+
+      - name: Install Playwright Chromium
+        run: pnpm run test:e2e:release:install-browsers
 
       - name: Run mobile transaction flow
         run: pnpm run test:e2e:release:mobile
