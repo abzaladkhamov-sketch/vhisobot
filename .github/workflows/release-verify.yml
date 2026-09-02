@@ -79,7 +79,7 @@ jobs:
           grep -F "Waiting on http://localhost:" "$report"
 
       - name: Upload controlled mobile failure diagnostics
-        if: ${{ failure() && steps.verify-controlled-mobile-failure.outcome == 'failure' }}
+        if: ${{ always() && steps.verify-controlled-mobile-failure.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: mobile-transaction-failure-report
